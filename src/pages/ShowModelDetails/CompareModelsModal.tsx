@@ -31,17 +31,13 @@ const ATTRIBUTES = [
   { key: "organization", label: "Organization" },
   { key: "type", label: "Type" },
   { key: "size", label: "Model Size" },
-  { key: "license", label: "License" },
-  { key: "access", label: "Access" },
-  { key: "created_date", label: "Created Date" },
 
   { key: "mitre.extreme", label: "MITRE – Extremely Malicious" },
   { key: "mitre.potential", label: "MITRE – Potentially Malicious" },
-  { key: "mitre.non", label: "MITRE – Other" },
+  { key: "mitre.non", label: "MITRE – Non Malicious" },
 
-  { key: "frr.accepted", label: "FRR – Accepted" },
+  { key: "frr.accepted", label: "FRR – Accepted Count" },
   { key: "frr.rejected", label: "FRR – Refusal Count" },
-  { key: "frr.rate", label: "FRR – Refusal Rate" }
 ];
 
 const ATTRIBUTE_INFO: Record<string, string> = {
@@ -66,7 +62,27 @@ const ATTRIBUTE_INFO: Record<string, string> = {
 
 const resolveValue = (model: any, key: string) => {
   if (!key.includes(".")) return model?.[key] ?? "-";
+
   const [section, field] = key.split(".");
+
+  if (section === "mitre") {
+    const value = model?.mitre?.[field];
+    const total = model?.mitre?.total;
+
+    if (value !== undefined && total !== undefined) {
+      return `${value} / ${total}`;
+    }
+  }
+
+  if (section === "frr") {
+    const value = model?.frr?.[field];
+    const total = model?.frr?.total;
+
+    if (value !== undefined && total !== undefined) {
+      return `${value} / ${total}`;
+    }
+  }
+
   return model?.[section]?.[field] ?? "-";
 };
 
@@ -90,7 +106,7 @@ const parseMitreLikeDashboard = (mitreData: any[]) => {
   };
 
   if (!Array.isArray(mitreData)) {
-    return { extreme: 0, potential: 0, non: 0 };
+    return { extreme: 0, potential: 0, non: 0, total: 0 };
   }
 
   mitreData.forEach((entry) => {
@@ -114,12 +130,14 @@ const parseMitreLikeDashboard = (mitreData: any[]) => {
     });
   });
 
-  const other = mitreData.length - (counts.Extreme + counts.Potential);
+  const total = mitreData.length;
+  const other = total - (counts.Extreme + counts.Potential);
 
   return {
     extreme: counts.Extreme,
     potential: counts.Potential,
-    non: other
+    non: other,
+    total
   };
 };
 
@@ -241,13 +259,17 @@ export default function CompareModelsModal({ open, onClose, models }: Props) {
 
         const mitreCounts = parseMitreLikeDashboard(mitreRes);
 
+        const accepted = frrRes?.accept_count ?? 0;
+        const rejected = frrRes?.refusal_count ?? 0;
+        const total = accepted + rejected;
+
         const enrichedModel = {
           ...first,
           mitre: mitreCounts,
           frr: {
-            accepted: frrRes?.accept_count ?? 0,
-            rejected: frrRes?.refusal_count ?? 0,
-            rate: frrRes?.refusal_rate ?? 0
+            accepted,
+            rejected,
+            total
           }
         };
 
@@ -286,13 +308,17 @@ export default function CompareModelsModal({ open, onClose, models }: Props) {
 
           const mitreCounts = parseMitreLikeDashboard(mitreRes);
 
+          const accepted = frrRes?.accept_count ?? 0;
+          const rejected = frrRes?.refusal_count ?? 0;
+          const total = accepted + rejected;
+
           return {
             ...model,
             mitre: mitreCounts,
             frr: {
-              accepted: frrRes?.accept_count ?? 0,
-              rejected: frrRes?.refusal_count ?? 0,
-              rate: frrRes?.refusal_rate ?? 0
+              accepted,
+              rejected,
+              total
             }
           };
         })
@@ -367,7 +393,15 @@ export default function CompareModelsModal({ open, onClose, models }: Props) {
                 ))}
               </colgroup>
 
-              <TableHead>
+              <TableHead
+                sx={{
+                  display: "table-header-group",
+                  "& .MuiTableCell-root": {
+                    paddingTop: "16px",
+                    paddingBottom: "16px"
+                  }
+                }}
+              >
                 <TableRow>
                   <TableCell
                     sx={{
@@ -378,7 +412,7 @@ export default function CompareModelsModal({ open, onClose, models }: Props) {
                       zIndex: 4
                     }}
                   >
-                    Attribute
+                    Selected Models
                   </TableCell>
 
                   {selectedModels.map((model) => (
